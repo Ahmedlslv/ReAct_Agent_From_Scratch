@@ -21,8 +21,8 @@ The project uses no agent framework and runs the model through a hosted API.
 Requires Python 3.10 or newer. Tested with Python 3.13.7 on Windows.
 
 ```powershell
-git clone https://github.com/Ahmedlslv/ReAct-Agent-from-scratch-.git
-cd ReAct-Agent-from-scratch-
+git clone https://github.com/Ahmedlslv/ReAct_Agent_From_Scratch.git
+cd ReAct_Agent_From_Scratch
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
