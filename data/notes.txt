@@ -1,0 +1,11 @@
+project: react-agent
+status: building
+lines: 12
+author: riadh
+stack: python, anthropic, duckduckgo
+goal: implement ReAct loop from scratch in ~150 LOC
+reference: arxiv 2210.03629
+week: W02D1
+sprint: 22-week AI engineering sprint
+started: 2026-05-18
+completed: in progress

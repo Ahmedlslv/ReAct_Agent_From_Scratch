@@ -1,0 +1,5 @@
+# Gemini SDK used by the basic agent.
+google-genai==2.29.0
+
+# Anthropic SDK still used by the original reflection module.
+anthropic>=0.25.0
