@@ -47,7 +47,8 @@ Usage:
 """
 
 # ── Imports ───────────────────────────────────────────────────────────────────
-from __future__ import annotations  # Enables newer type hint syntax on Python <3.10
+# Enables newer type hint syntax on Python <3.10
+from __future__ import annotations
 
 import re           # Regular expressions — for parsing Thought/Action/Answer/Reflect
 import sys          # Command-line argument access
@@ -63,8 +64,19 @@ SYSTEM_PROMPT = """You are a ReAct agent. You solve problems by interleaving Tho
 
 You have access to these tools:
 - web_search(query) — search the web for factual information; do NOT use for math or local files
-- run_python(code) — execute Python for any math, counting, data processing, or string operations
+- run_python(code) — run Python in a fresh isolated environment for math and text processing; it cannot access host files or the internet
 - file_read(file_path) — read a local file; do NOT use for web content or computation
+
+For local data, use file_read first. Then include only the necessary text or
+values directly in the Python code. Do not try to open host files from Python.
+
+Each run_python call starts fresh. Variables, imports and temporary files do
+not persist between calls.
+
+A single expression returns its value. For statements, use print(result).
+Example: Action: run_python("2 ** 10")
+Example: Action: run_python("import math; print(math.sqrt(256))")
+
 
 Always follow this exact format for each step:
 
@@ -188,7 +200,8 @@ def is_stalled(history: list[tuple[str, str]], window: int = 2) -> bool:
     if len(history) < window:
         return False                    # Not enough history to judge
     recent = history[-window:]          # Last `window` actions
-    return len(set(recent)) == 1        # True if all are identical (set collapses duplicates)
+    # True if all are identical (set collapses duplicates)
+    return len(set(recent)) == 1
 
 
 # ── Core loop ─────────────────────────────────────────────────────────────────
@@ -223,14 +236,17 @@ def run_react_reflective(
     messages = [{"role": "user", "content": question}]
 
     step = 0
-    action_history: list[tuple[str, str]] = []  # Track (tool, arg) pairs for stall detection
-    reflect_count = 0                            # How many times we've reflected (for logging)
+    # Track (tool, arg) pairs for stall detection
+    action_history: list[tuple[str, str]] = []
+    # How many times we've reflected (for logging)
+    reflect_count = 0
 
     if verbose:
         print(f"\n{'='*60}")
         print(f"Question: {question}")
         # Show which mode we're using and, for fixed mode, the interval
-        print(f"Mode: reflect_{reflect_mode}" + (f" (N={reflect_every})" if reflect_mode == "fixed" else ""))
+        print(f"Mode: reflect_{reflect_mode}" +
+              (f" (N={reflect_every})" if reflect_mode == "fixed" else ""))
         print(f"{'='*60}\n")
 
     while step < max_steps:
@@ -280,7 +296,8 @@ def run_react_reflective(
                 max_tokens=512,
                 system=SYSTEM_PROMPT,
                 messages=messages,
-                stop_sequences=["Observation:"],  # Same stop sequence as normal steps
+                # Same stop sequence as normal steps
+                stop_sequences=["Observation:"],
             )
             reflect_text = reflect_response.content[0].text.strip()
 
@@ -290,7 +307,8 @@ def run_react_reflective(
             # Parse the reflection response — it may contain a Reflect note,
             # a next Action, or even a final Answer (if the model decides it
             # already has enough information).
-            reflect_note, answer, action = parse_reflect_and_continue(reflect_text)
+            reflect_note, answer, action = parse_reflect_and_continue(
+                reflect_text)
 
             # Add the model's reflection response to history
             messages.append({"role": "assistant", "content": reflect_text})
@@ -298,7 +316,8 @@ def run_react_reflective(
             # If the model produced a final answer during reflection — we're done
             if answer:
                 if verbose:
-                    print(f"\n{'='*60}\nFinal Answer (post-reflect): {answer}\n{'='*60}\n")
+                    print(
+                        f"\n{'='*60}\nFinal Answer (post-reflect): {answer}\n{'='*60}\n")
                 return answer
 
             # If the model produced an action during reflection, execute it
@@ -309,7 +328,8 @@ def run_react_reflective(
                 action_history.append((tool_name, argument))
                 if verbose:
                     print(f"Observation: {observation}\n")
-                messages.append({"role": "user", "content": f"Observation: {observation}"})
+                messages.append(
+                    {"role": "user", "content": f"Observation: {observation}"})
                 continue  # Go back to the top of the while loop
 
             # If reflection produced neither an answer nor an action, nudge the
@@ -353,7 +373,8 @@ def run_react_reflective(
 
         # Append to conversation history
         messages.append({"role": "assistant", "content": assistant_text})
-        messages.append({"role": "user",      "content": f"Observation: {observation}"})
+        messages.append(
+            {"role": "user",      "content": f"Observation: {observation}"})
 
     return "Max steps reached without a final answer."
 

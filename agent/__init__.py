@@ -11,7 +11,7 @@ __all__ = ["run_react", "run_react_reflective"]
 
 def __getattr__(name):
     # Load only the requested agent. The original reflection module still uses
-    # Anthropic; importing the Groq base agent must not require that SDK.
+    # importing the Gemini base agent.
     if name == "run_react":
         from agent.base import run_react
         return run_react

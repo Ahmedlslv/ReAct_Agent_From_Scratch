@@ -40,16 +40,14 @@ Reference: https://www.anthropic.com/engineering/writing-tools-for-agents
 # (e.g. `str | None`, `tuple[str, str]`) on older Python versions.
 from __future__ import annotations
 
-# Standard math functions (used by run_python's eval scope)
-import math
-import os                   # File system access — listing directories, resolving paths
-import io                   # In-memory file-like objects — used to capture print() output
-import contextlib           # redirect_stdout — captures stdout from executed code
-import urllib.request       # Low-level HTTP — avoids needing the `requests` library
-import urllib.parse         # URL encoding — converts query strings to safe URL format
-import json                 # Parsing JSON responses from the DuckDuckGo API
-# Resolves paths and checks whether they stay inside an allowed folder
+import ast
+import json
+import os
+import urllib.parse
+import urllib.request
 from pathlib import Path
+
+from .python_sandbox import MAX_CODE_BYTES, run_in_sandbox
 
 # ── Tool: web_search ──────────────────────────────────────────────────────────
 # Uses the DuckDuckGo Instant Answer API (free, no API key needed).
@@ -115,11 +113,8 @@ def web_search(query: str) -> str:
         # Nothing useful returned — give the agent specific recovery strategies
         # (three options is better than one vague hint)
         return (
-            f"No result found for '{query}'.\n"
-            "Suggestions:\n"
-            "  - Try a shorter or rephrased query\n"
-            "  - Use file_read if the information is in a local file\n"
-            "  - Answer from your own knowledge if you are confident"
+            f"No result found for '{query}'. "
+            "This search returned no evidence."
         )
 
     except Exception as exc:
@@ -228,83 +223,36 @@ def file_read(file_path: str, max_chars: int = 3000) -> str:
 # and more (counting, string operations, data processing, imports, etc.).
 
 def run_python(code: str) -> str:
+    """Run Python in a disposable Docker container.
+
+    Expressions return their value; statements should use print().
+    Host files, host credentials and external networking are unavailable.
+    Each call starts fresh. Use file_read first and embed the needed data.
     """
-    Execute Python code or evaluate a Python expression and return the result.
+    if not isinstance(code, str):
+        return "run_python error: code must be text."
+    if len(code) > MAX_CODE_BYTES:
+        return "run_python error: code is too long."
 
-    Use this for:
-      - Any math or numeric computation (preferred over guessing)
-      - Counting, filtering, or transforming data from files
-      - String operations (length, splitting, searching)
-      - Data processing (sorting, deduplicating, summing)
+    source = code.strip()
 
-    Two modes (auto-detected):
-      - Single expression: evaluated and result returned directly
-          e.g. run_python("2 ** 10")  →  "1024"
-          e.g. run_python("len([l for l in open('notes.txt') if ':' in l])")
-      - Statements (import, loops, print, assignments): executed, stdout returned
-          e.g. run_python("import math; print(round(math.sqrt(120), 2))")
-
-    IMPORTANT:
-      - Always use print() for statement-mode results, otherwise you get no output.
-      - File paths in code are relative to the current working directory.
-      - Do NOT use run_python to search the web — use web_search instead.
-      - Do NOT use run_python to read large files directly — use file_read first,
-        then process the content with run_python if needed.
-
-    Returns the expression result or stdout as a string.
-    On error, returns a clear message with the exception and a fix suggestion.
-    """
-    # Strip surrounding quotes the model sometimes adds
-    code = code.strip().strip("\"'")
-    if not code:
-        return "run_python error: code cannot be empty. Provide a Python expression or statement."
-
-    # ── Mode 1: Single expression evaluation ──────────────────────────────────
-    # `compile(code, "<string>", "eval")` succeeds only if `code` is a single
-    # expression (e.g. "2 + 2", "len('hello')", "math.sqrt(144)").
-    # If it's a statement (import, assignment, print, etc.), it raises SyntaxError.
+    # The current text protocol may wrap the source in Python string quotes.
+    # literal_eval decodes that wrapper; it does not execute the snippet.
     try:
-        compiled = compile(code, "<string>", "eval")
-        # {} = empty namespace, no builtins by default
-        result = eval(compiled, {})
-        return str(result)
-    except SyntaxError:
-        pass  # Not a single expression — fall through to exec mode
-    except Exception as exc:
-        # A genuine runtime error in the expression (e.g. NameError, ZeroDivisionError)
-        return (
-            f"run_python error: {exc}\n"
-            f"Expression tried: {code!r}\n"
-            "Fix: check variable names, syntax, and that any files exist."
-        )
+        decoded = ast.literal_eval(source)
+    except (SyntaxError, ValueError):
+        pass
+    else:
+        if isinstance(decoded, str):
+            source = decoded
 
-    # ── Mode 2: Statement execution ───────────────────────────────────────────
-    # For code with multiple lines, assignments, imports, loops, print() calls, etc.
-    # We capture everything the code prints to stdout using redirect_stdout.
-    buf = io.StringIO()   # In-memory buffer that acts like a file
-    try:
-        with contextlib.redirect_stdout(buf):
-            exec(code, {})   # noqa: S102 — execute the code in an empty namespace
-        stdout = buf.getvalue()   # Everything that was printed
-        if not stdout:
-            # Code ran but printed nothing — common beginner mistake (forgot print())
-            return (
-                "run_python ran successfully but produced no output.\n"
-                "If you expected a result, wrap it in print(), e.g. print(result)."
-            )
-        return stdout.strip()
-    except Exception as exc:
-        return (
-            f"run_python error: {exc}\n"
-            f"Code tried:\n{code}\n"
-            "Fix: check imports, variable names, and file paths."
-        )
-
+    return run_in_sandbox(source)
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 # The agent loop doesn't call tool functions directly — it calls execute_tool()
 # with a name (string) and an argument (string). This single entry point keeps
 # the agent code clean and makes it easy to add or remove tools.
+
 
 # Map of tool name → callable. The keys must match what the agent writes after
 # "Action:" (e.g. "Action: web_search(...)").
