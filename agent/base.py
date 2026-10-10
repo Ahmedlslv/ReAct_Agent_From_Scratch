@@ -54,7 +54,7 @@ SYSTEM_PROMPT = """You are a ReAct agent. You solve problems by interleaving Tho
 
 You have access to these tools:
 - web_search(query) — search the web for factual information; do NOT use for math or local files
-- file_read(file_path) — read a local file; do NOT use for web content or computation
+- file_read(file_path) — read files inside the project's data folder; use paths such as data/notes.txt; do NOT use for web content or computation
 - run_python(code) — execute Python for any math, counting, data processing, or string operations
 
 Actions accept one argument value. Do not include parameter names.

@@ -87,7 +87,8 @@ tool execution and recovery rather than complete source verification.
 - Text parsing depends on the model following the requested format.
 - DuckDuckGo Instant Answer provides limited coverage and may return no result.
 - Python execution uses unrestricted eval/exec and is not sandboxed.
-- File access is not yet restricted to the data folder.
+- `file_read` is restricted to the data folder, but unrestricted Python
+  execution can still access other files.
 - API quotas and temporary failures can interrupt runs.
 - The reflection module still uses Anthropic.
 - Included evaluation reports describe an earlier implementation and have
