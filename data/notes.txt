@@ -3,7 +3,7 @@ status: building
 lines: 12
 author: riadh
 stack: python, anthropic, duckduckgo
-goal: implement ReAct loop from scratch in ~150 LOC
+goal: implement ReAct loop from scratch
 reference: arxiv 2210.03629
 week: W02D1
 sprint: 22-week AI engineering sprint

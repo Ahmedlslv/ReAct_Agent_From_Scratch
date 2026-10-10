@@ -55,7 +55,18 @@ SYSTEM_PROMPT = """You are a ReAct agent. You solve problems by interleaving Tho
 You have access to these tools:
 - web_search(query) — search the web for factual information; do NOT use for math or local files
 - file_read(file_path) — read files inside the project's data folder; use paths such as data/notes.txt; do NOT use for web content or computation
-- run_python(code) — execute Python for any math, counting, data processing, or string operations
+- run_python(code) — run Python in a fresh isolated environment for math and text processing; it cannot access host files or the internet
+
+
+For local data, use file_read first. Then include only the necessary text or
+values directly in the Python code. Do not try to open host files from Python.
+
+Each run_python call starts fresh. Variables, imports and temporary files do
+not persist between calls.
+
+A single expression returns its value. For statements, use print(result).
+Example: Action: run_python("2 ** 10")
+Example: Action: run_python("import math; print(math.sqrt(256))")
 
 Actions accept one argument value. Do not include parameter names.
 Correct: Action: file_read("data/notes.txt")
@@ -160,10 +171,11 @@ def run_react(
         key = getpass("Paste your Gemini API key now: ").strip()
     if not key:
         raise ValueError("A Gemini API key is required.")
-    model = os.environ.get("GEMINI_MODEL") or "gemini-3-flash-preview"
+
+    model = os.environ.get("GEMINI_MODEL") or "gemini-3.5-flash-lite"
     client = genai.Client(api_key=key)
 
-    # Groq includes system instructions as a message, rather than a system= argument.
+    # Gemini receives system instructions through GenerateContentConfig.
     # Store the conversation history. Send system instructions separately.
     # Start the conversation with the user's question.
     messages = [
@@ -171,6 +183,14 @@ def run_react(
     ]
 
     step = 0  # Counter to enforce max_steps
+    search_calls = 0
+    search_limit = 3
+    search_limit_message = (
+        "The web search budget is exhausted. No further web searches "
+        "are available for this task. Complete remaining work using "
+        "other tools and existing observations. Clearly state what "
+        "could not be verified."
+    )
 
     print(f"\n{'='*60}")
     print(f"Question: {question}")
@@ -219,12 +239,22 @@ def run_react(
             )
         else:
             tool_name, argument = parsed
-            if verbose:
-                print(f"\nObservation: [calling {tool_name}({argument!r})]")
 
-            # execute_tool dispatches to the correct function in tools_v2.py
-            # and returns a plain string — the "real" observation.
-            observation = execute_tool(tool_name, argument)
+            if tool_name == "web_search" and search_calls >= search_limit:
+                observation = search_limit_message
+            else:
+                if tool_name == "web_search":
+                    search_calls += 1
+
+                if verbose:
+                    print(
+                        f"\nObservation: [calling {tool_name}({argument!r})]"
+                    )
+
+                observation = execute_tool(tool_name, argument)
+
+                if tool_name == "web_search" and search_calls == search_limit:
+                    observation += f"\n\n{search_limit_message}"
 
         if verbose:
             print(f"Observation: {observation}\n")
