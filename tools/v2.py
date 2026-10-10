@@ -40,19 +40,22 @@ Reference: https://www.anthropic.com/engineering/writing-tools-for-agents
 # (e.g. `str | None`, `tuple[str, str]`) on older Python versions.
 from __future__ import annotations
 
-import math           # Standard math functions (used by run_python's eval scope)
-import os             # File system access — listing directories, resolving paths
-import io             # In-memory file-like objects — used to capture print() output
-import contextlib     # redirect_stdout — captures stdout from executed code
-import urllib.request # Low-level HTTP — avoids needing the `requests` library
-import urllib.parse   # URL encoding — converts query strings to safe URL format
-import json           # Parsing JSON responses from the DuckDuckGo API
-
+# Standard math functions (used by run_python's eval scope)
+import math
+import os                   # File system access — listing directories, resolving paths
+import io                   # In-memory file-like objects — used to capture print() output
+import contextlib           # redirect_stdout — captures stdout from executed code
+import urllib.request       # Low-level HTTP — avoids needing the `requests` library
+import urllib.parse         # URL encoding — converts query strings to safe URL format
+import json                 # Parsing JSON responses from the DuckDuckGo API
+# Resolves paths and checks whether they stay inside an allowed folder
+from pathlib import Path
 
 # ── Tool: web_search ──────────────────────────────────────────────────────────
 # Uses the DuckDuckGo Instant Answer API (free, no API key needed).
 # Caveat: it only returns summary-level results (Wikipedia abstracts, direct
 # factual answers). It won't return full web page content.
+
 
 def web_search(query: str) -> str:
     """
@@ -87,7 +90,8 @@ def web_search(query: str) -> str:
 
         # Make the HTTP GET request with a descriptive User-Agent header.
         # timeout=8 prevents the agent from hanging if the API is slow.
-        req = urllib.request.Request(url, headers={"User-Agent": "react-agent/1.0"})
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "react-agent/1.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode())
 
@@ -96,7 +100,7 @@ def web_search(query: str) -> str:
         # AbstractText: Wikipedia-style summary paragraph (highest quality)
         if data.get("AbstractText"):
             source = data.get("AbstractURL", "")
-            text   = data["AbstractText"]
+            text = data["AbstractText"]
             return f"{text}\n\nSource: {source}" if source else text
 
         # Answer: a short direct factual answer (e.g. unit conversions, dates)
@@ -138,16 +142,16 @@ def file_read(file_path: str, max_chars: int = 3000) -> str:
     Read the contents of a local file.
 
     Use this to access data in local files: text, markdown, JSON, CSV, code, etc.
-    The file path can be relative (resolved from the current working directory)
-    or absolute.
+    Relative paths are resolved from the project root, for example data/notes.txt.
+    Only paths that resolve inside the project's data folder are allowed.
 
     The response includes:
       - File contents (up to max_chars characters)
       - A truncation notice if the file was cut off
       - File metadata: total lines, total characters
 
-    If the file is not found, the error message lists files in the same directory
-    so you can correct the path.
+    If the file is not found, the error message lists up to ten files directly
+    inside data so you can correct the path.
 
     Do NOT use file_read for web content — use web_search instead.
     Do NOT use file_read to run or evaluate code — use run_python instead.
@@ -162,10 +166,16 @@ def file_read(file_path: str, max_chars: int = 3000) -> str:
         return "file_read error: file_path cannot be empty. Provide a file name or path."
 
     try:
-        # os.path.abspath resolves relative paths using the current working directory.
+        # Resolve the requested path and check that it stays inside data.
         # errors="replace" handles files with encoding issues (replaces bad bytes
         # with a placeholder character instead of raising an exception).
-        full_path = os.path.abspath(file_path)
+        project_root = Path(__file__).resolve().parents[1]
+        data_root = (project_root / "data").resolve()
+        full_path = (project_root / file_path).resolve()
+
+        if not full_path.is_relative_to(data_root):
+            return "file_read error: access denied. Only files inside data are allowed."
+
         with open(full_path, "r", errors="replace") as f:
             content = f.read()
 
@@ -173,8 +183,9 @@ def file_read(file_path: str, max_chars: int = 3000) -> str:
         total_chars = len(content)
         # Count lines: number of newlines + 1 for the last line (if file is not empty
         # and doesn't end with a newline)
-        total_lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-        truncated   = total_chars > max_chars
+        total_lines = content.count(
+            "\n") + (1 if content and not content.endswith("\n") else 0)
+        truncated = total_chars > max_chars
 
         # Return the (possibly truncated) content
         displayed = content[:max_chars]
@@ -193,9 +204,10 @@ def file_read(file_path: str, max_chars: int = 3000) -> str:
     except FileNotFoundError:
         # The file doesn't exist. List nearby files so the agent can self-correct
         # the path without a blind second attempt.
-        directory = os.path.dirname(os.path.abspath(file_path)) or "."
+        directory = str(data_root)
         try:
-            nearby = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+            nearby = [f for f in os.listdir(
+                directory) if os.path.isfile(os.path.join(directory, f))]
             nearby_str = ", ".join(sorted(nearby)[:10])  # show up to 10 files
         except Exception:
             nearby_str = "(could not list directory)"
@@ -253,7 +265,8 @@ def run_python(code: str) -> str:
     # If it's a statement (import, assignment, print, etc.), it raises SyntaxError.
     try:
         compiled = compile(code, "<string>", "eval")
-        result   = eval(compiled, {})   # {} = empty namespace, no builtins by default
+        # {} = empty namespace, no builtins by default
+        result = eval(compiled, {})
         return str(result)
     except SyntaxError:
         pass  # Not a single expression — fall through to exec mode
@@ -300,6 +313,7 @@ TOOLS: dict[str, callable] = {
     "file_read":  file_read,
     "run_python": run_python,
 }
+
 
 def execute_tool(tool_name: str, argument: str) -> str:
     """
